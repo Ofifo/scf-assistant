@@ -35,12 +35,19 @@ class HighQualitySCFAssistantBot:
         return tick.ask 
 
     def calculate_fib_retracement(self, timeframe=1, lookback_candles=50):
+        """Calculates macro high, low, 61.8% line and live pullback metrics."""
         success, msg = self.initialize_mt5()
         if not success:
-            base_high = 29500.0 + (lookback_candles * 0.5)
-            base_low = 28900.0 - (lookback_candles * 0.2)
-            level_618 = base_high - ((base_high - base_low) * 0.618)
-            return {"high": base_high, "low": base_low, "level_618": round(level_618, 2), "current_retracement": 61.8}
+            # Flawless isolated mock calculation dictionary for cloud demo
+            base_high = float(29500.0 + (lookback_candles * 0.5))
+            base_low = float(28900.0 - (lookback_candles * 0.2))
+            level_618 = float(base_high - ((base_high - base_low) * 0.618))
+            return {
+                "high": round(base_high, 2), 
+                "low": round(base_low, 2), 
+                "level_618": round(level_618, 2), 
+                "current_retracement": 61.8
+            }
             
         rates = mt5.copy_rates_from_pos(self.symbol, timeframe, 0, lookback_candles)
         if rates is None or len(rates) == 0:
@@ -60,13 +67,15 @@ class HighQualitySCFAssistantBot:
         current_retracement = ((swing_high - live_price) / total_range) * 100
         level_618 = swing_high - (total_range * 0.618)
         
-        return {"high": round(swing_high, 2), "low": round(swing_low, 2), "level_618": round(level_618, 2), "current_retracement": round(current_retracement, 2)}
+        return {
+            "high": round(swing_high, 2), 
+            "low": round(swing_low, 2), 
+            "level_618": round(level_618, 2), 
+            "current_retracement": round(current_retracement, 2)
+        }
 
     def check_momentum_reversal(self, timeframe=5):
-        """
-        PHASE 5 MOMENTUM AUTOMATION: Evaluates candle interaction metrics 
-        to mathematically confirm if structural buying velocity has returned.
-        """
+        """Evaluates candle body ratios to confirm buy pressure intensity."""
         success, msg = self.initialize_mt5()
         if not success:
             return {"momentum": "BULLISH", "status": "RETURNING", "confirmed": True}
@@ -75,9 +84,8 @@ class HighQualitySCFAssistantBot:
         if rates is None or len(rates) < 2:
             return {"momentum": "BEARISH", "status": "STAGNANT", "confirmed": False}
             
-        # Standard structural array unpacking safely matching local execution layouts
-        prev_candle = rates[0] 
-        last_candle = rates[1] 
+        prev_candle = rates[0]
+        last_candle = rates[1]
         
         prev_body = prev_candle['close'] - prev_candle['open']
         last_body = last_candle['close'] - last_candle['open']
@@ -220,6 +228,3 @@ with col3:
     m5_valid = (m5_structure == "Bullish" and m5_sweep and m5_bos)
     st.metric(label="🎯 M5 Trigger Confirmation", value="VALID" if m5_valid else "WAITING")
 
-st.markdown("### 📈 Automated Math Scanner Data (Phase 4 & 5)")
-f_col1, f_col2, f_col3, f_col4 = st.columns(4)
-f_col1.metric("Structural High Found", f"{fib_metrics['high']}")
