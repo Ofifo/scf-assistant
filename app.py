@@ -1,6 +1,5 @@
 import streamlit as st
 import pandas as pd
-import MetaTrader5 as mt5
 import time
 
 # --- SMART OS DETECTION AND IMPORT ---
@@ -20,10 +19,8 @@ class HighQualitySCFAssistantBot:
         self.mt5_initialized = False
         
     def initialize_mt5(self):
-        """Attempts connection to MT5 terminal if platform supports it."""
         if not MT5_AVAILABLE:
             return False, "⚠️ Running in CLOUD DEMO MODE (MT5 requires a local Windows environment)."
-        
         if not self.mt5_initialized:
             if not mt5.initialize():
                 return False, f"MT5 initialization failed: {mt5.last_error()}"
@@ -31,32 +28,33 @@ class HighQualitySCFAssistantBot:
         return True, f"Connected to MT5 terminal successfully for {self.symbol}."
 
     def fetch_live_price(self):
-        """Pulls raw, real-time tick data out of the live MT5 engine."""
         success, msg = self.initialize_mt5()
         if not success: return None
-        
         tick = mt5.symbol_info_tick(self.symbol)
         if tick is None: return None
         return tick.ask 
 
-    def calculate_fib_retracement(self, timeframe=mt5.TIMEFRAME_H1, lookback_candles=50):
+    def calculate_fib_retracement(self, timeframe=1, lookback_candles=50):
         """
-        PHASE 4 AUTOMATION: Scans historical bars to find the structural
-        High and Low, then calculates the current pullback percentage.
+        PHASE 4 AUTOMATION EXTREME: Dynamically scans historical bars based
+        on the exact lookback window specified on the web dashboard sidebar.
         """
         success, msg = self.initialize_mt5()
         if not success:
-            # Return dummy metrics for cloud mode sandbox tracking
-            return {"high": 29600.0, "low": 28900.0, "level_618": 29167.0, "current_retracement": 61.8}
+            # Flexible cloud simulation behavior based on the lookback depth
+            base_high = 29500.0 + (lookback_candles * 0.5)
+            base_low = 28900.0 - (lookback_candles * 0.2)
+            level_618 = base_high - ((base_high - base_low) * 0.618)
+            return {"high": base_high, "low": base_low, "level_618": round(level_618, 2), "current_retracement": 61.8}
             
-        # Fetch historical candlestick bars
+        # Fetch historical candlestick bars using dynamic user input variable
         rates = mt5.copy_rates_from_pos(self.symbol, timeframe, 0, lookback_candles)
         if rates is None or len(rates) == 0:
             return {"high": 0.0, "low": 0.0, "level_618": 0.0, "current_retracement": 0.0}
             
         df_rates = pd.DataFrame(rates)
         
-        # Determine macro swing points over lookback period
+        # Calculate max/min bounds across the user-defined history length
         swing_high = float(df_rates['high'].max())
         swing_low = float(df_rates['low'].min())
         total_range = swing_high - swing_low
@@ -64,15 +62,10 @@ class HighQualitySCFAssistantBot:
         if total_range == 0:
             return {"high": swing_high, "low": swing_low, "level_618": swing_high, "current_retracement": 0.0}
             
-        # Get live price to establish pullback matrix depth
         live_price = self.fetch_live_price()
         if not live_price: live_price = swing_high
         
-        # Math Formula for Pullback percentage from the top down:
-        # Retracement % = ((Highest High - Current Price) / (Highest High - Lowest Low)) * 100
         current_retracement = ((swing_high - live_price) / total_range) * 100
-        
-        # Calculate the golden structural level price string 
         level_618 = swing_high - (total_range * 0.618)
         
         return {
@@ -113,9 +106,10 @@ class HighQualitySCFAssistantBot:
         if not MT5_AVAILABLE or not live_execution:
             return f"⚙️ SIMULATION PASSED: Bot would execute {order_type} for {lots} lots. (SL: {sl} | TP: {tp})"
             
-        action = mt5.ORDER_TYPE_BUY if order_type == "BUY" else mt5.ORDER_TYPE_SELL
+        import MetaTrader5 as local_mt5
+        action = local_mt5.ORDER_TYPE_BUY if order_type == "BUY" else local_mt5.ORDER_TYPE_SELL
         request = {
-            "action": mt5.TRADE_ACTION_DEAL,
+            "action": local_mt5.TRADE_ACTION_DEAL,
             "symbol": self.symbol,
             "volume": lots,
             "type": action,
@@ -125,12 +119,12 @@ class HighQualitySCFAssistantBot:
             "deviation": 20,
             "magic": 20260914,
             "comment": f"SCF HQ {order_type}",
-            "type_time": mt5.ORDER_TIME_GTC,
-            "type_filling": mt5.ORDER_FILLING_IOC,
+            "type_time": local_mt5.ORDER_TIME_GTC,
+            "type_filling": local_mt5.ORDER_FILLING_IOC,
         }
         
-        result = mt5.order_send(request)
-        if result.retcode != mt5.TRADE_RETCODE_DONE:
+        result = local_mt5.order_send(request)
+        if result.retcode != local_mt5.TRADE_RETCODE_DONE:
             return f"❌ MT5 Order Refused: {result.comment}"
         return f"🔥 LIVE SUCCESS: Opened {order_type} for {lots} lots on your terminal!"
 
@@ -161,14 +155,20 @@ else:
     st.sidebar.info("☁️ Environment: CLOUD SIMULATION (Safe Sandbox Only)")
     live_price = st.sidebar.number_input("USA100 Live Price Target", value=29262.0, step=1.0)
 
-# --- PHASE 4 AUTOMATED ENGINE DISPATCH ---
-# Choose timeframe to calculate the high/low market structure
+# --- NEW LOOKBACK WINDOW MATRIX SETTINGS ---
+st.sidebar.markdown("---")
+st.sidebar.header("📐 Fibonacci Lookback Setup")
 tf_choice = st.sidebar.selectbox("Fib Lookback Timeframe", ["1 Hour (H1)", "15 Minute (M15)", "4 Hour (H4)"])
-tf_map = {"1 Hour (H1)": mt5.TIMEFRAME_H1 if MT5_AVAILABLE else 1, "15 Minute (M15)": mt5.TIMEFRAME_M15 if MT5_AVAILABLE else 2, "4 Hour (H4)": mt5.TIMEFRAME_H4 if MT5_AVAILABLE else 3}
+tf_map = {"1 Hour (H1)": 16385, "15 Minute (M15)": 15, "4 Hour (H4)": 16388} # Accurate native MT5 structural constants
 
-fib_metrics = st.session_state.bot.calculate_fib_retracement(timeframe=tf_map[tf_choice])
+# Visual lookback selection engine slider
+lookback_input = st.sidebar.slider("Historical Candle Lookback Depth", min_value=10, max_value=200, value=50, step=5)
+
+# Connect the dashboard input variables directly into the engine math method
+fib_metrics = st.session_state.bot.calculate_fib_retracement(timeframe=tf_map[tf_choice] if MT5_AVAILABLE else 1, lookback_candles=lookback_input)
 retracement = fib_metrics["current_retracement"]
 
+st.sidebar.markdown("---")
 dxy_bias = st.sidebar.selectbox("DXY Structure Bias", ["BEARISH", "BULLISH"])
 flow_state = st.sidebar.selectbox("Market Flow State", ["CORRECTION", "IMPULSE", "CONTINUATION"])
 momentum_status = st.sidebar.selectbox("Momentum Status", ["RETURNING", "DECREASING", "STAGNANT"])
@@ -198,22 +198,19 @@ with col3:
     m5_valid = (m5_structure == "Bullish" and m5_sweep and m5_bos)
     st.metric(label="🎯 M5 Trigger Confirmation", value="VALID" if m5_valid else "WAITING")
 
-# --- EXPANDED VISUAL METRICS FOR AUTOMATED PHASE 4 ---
 st.markdown("### 📈 Automated Math Scanner Data (Phase 4)")
 f_col1, f_col2, f_col3, f_col4 = st.columns(4)
-f_col1.metric("Structural High Found", f"{fib_metrics['high']}")
-f_col2.metric("Structural Low Found", f"{fib_metrics['low']}")
+f_col1.metric(f"Structural High Found ({lookback_input} Bars)", f"{fib_metrics['high']}")
+f_col2.metric(f"Structural Low Found ({lookback_input} Bars)", f"{fib_metrics['low']}")
 f_col3.metric("Golden 61.8% Entry Line", f"{fib_metrics['level_618']}")
 f_col4.metric("Current Pullback Depth", f"{retracement}%")
 
 st.markdown("### 📋 Automated 7-Phase Checklist Summary")
 
 area_status = "INSIDE DEMAND" if (28900 <= live_price <= 29050) else ("INSIDE SUPPLY" if (29600 <= live_price <= 29750) else "BETWEEN ZONES")
-correction_quality = "GOOD" if retracement >= 61.8 else "SHALLOWh" if retracement < 38.2 else "MODERATE"
+correction_quality = "GOOD" if retracement >= 61.8 else "SHALLOW" if retracement < 38.2 else "MODERATE"
 
 checklist_data = {
     "Phase Metric Block": ["HTF Trend Bias", "Value Zone Placement", "Fib Position Index", "DXY Directional Wind", "Flow State Alignment", "Zone Boundaries (Area)", "Correction Pullback Quality", "Momentum Returning Pulse", "M5 Micro Trigger Structure"],
     "Current Engine Value": ["NEUTRAL/BULLISH", "DISCOUNT", "MID/DEEP DISCOUNT", dxy_bias, flow_state, area_status, f"{retracement}% ({correction_quality})", f"BULLISH - {momentum_status}", f"Sweep: {m5_sweep} | BOS: {m5_bos}"],
     "Verification Status": [
-        "✅ Verified", "✅ Verified", "✅ Verified",
-        "✅ Verified" if dxy_bias == "BEARISH" else "❌ Disaligned (Hold)",
