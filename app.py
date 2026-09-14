@@ -35,10 +35,6 @@ class HighQualitySCFAssistantBot:
         return tick.ask 
 
     def calculate_fib_retracement(self, timeframe=1, lookback_candles=50):
-        """
-        PHASE 4 AUTOMATION EXTREME: Dynamically scans historical bars based
-        on the exact lookback window specified on the web dashboard sidebar.
-        """
         success, msg = self.initialize_mt5()
         if not success:
             base_high = 29500.0 + (lookback_candles * 0.5)
@@ -51,7 +47,6 @@ class HighQualitySCFAssistantBot:
             return {"high": 0.0, "low": 0.0, "level_618": 0.0, "current_retracement": 0.0}
             
         df_rates = pd.DataFrame(rates)
-        
         swing_high = float(df_rates['high'].max())
         swing_low = float(df_rates['low'].min())
         total_range = swing_high - swing_low
@@ -65,12 +60,41 @@ class HighQualitySCFAssistantBot:
         current_retracement = ((swing_high - live_price) / total_range) * 100
         level_618 = swing_high - (total_range * 0.618)
         
-        return {
-            "high": round(swing_high, 2),
-            "low": round(swing_low, 2),
-            "level_618": round(level_618, 2),
-            "current_retracement": round(current_retracement, 2)
-        }
+        return {"high": round(swing_high, 2), "low": round(swing_low, 2), "level_618": round(level_618, 2), "current_retracement": round(current_retracement, 2)}
+
+    def check_momentum_reversal(self, timeframe=5):
+        """
+        PHASE 5 MOMENTUM AUTOMATION: Evaluates candle interaction metrics 
+        to mathematically confirm if structural buying velocity has returned.
+        """
+        success, msg = self.initialize_mt5()
+        if not success:
+            # Cloud sandbox default simulation tracking values
+            return {"momentum": "BULLISH", "status": "RETURNING", "confirmed": True}
+            
+        # Copy the last two completed lower-timeframe bars (Index 1 and Index 2)
+        rates = mt5.copy_rates_from_pos(self.symbol, timeframe, 1, 2)
+        if rates is None or len(rates) < 2:
+            return {"momentum": "BEARISH", "status": "STAGNANT", "confirmed": False}
+            
+        prev_candle = rates[0] # The older candle
+        last_candle = rates[1] # The most recently completed candle
+        
+        # Calculate real body expansions (Close - Open)
+        prev_body = prev_candle['close'] - prev_candle['open']
+        last_body = last_candle['close'] - last_candle['open']
+        
+        # Check for a Bullish Engulfing structural shifts pattern match
+        is_prev_bearish = prev_body < 0
+        is_last_bullish = last_body > 0
+        engulfs_range = abs(last_body) >= abs(prev_body)
+        
+        if is_prev_bearish and is_last_bullish and engulfs_range:
+            return {"momentum": "BULLISH", "status": "RETURNING", "confirmed": True}
+        elif is_last_bullish:
+            return {"momentum": "BULLISH", "status": "STABILIZING", "confirmed": False}
+        else:
+            return {"momentum": "BEARISH", "status": "DECREASING", "confirmed": False}
 
     def get_account_balance(self):
         if MT5_AVAILABLE and self.mt5_initialized:
@@ -163,10 +187,16 @@ lookback_input = st.sidebar.slider("Historical Candle Lookback Depth", min_value
 fib_metrics = st.session_state.bot.calculate_fib_retracement(timeframe=tf_map[tf_choice] if MT5_AVAILABLE else 1, lookback_candles=lookback_input)
 retracement = fib_metrics["current_retracement"]
 
+# --- NEW AUTOMATED PHASE 5 TIMEFRAME SELECTION ENGINE ---
 st.sidebar.markdown("---")
+st.sidebar.header("🔥 Momentum Validation Window")
+m_tf_choice = st.sidebar.selectbox("Momentum Evaluation TF", ["5 Minute (M5)", "1 Minute (M1)", "15 Minute (M15)"])
+m_tf_map = {"5 Minute (M5)": 5, "1 Minute (M1)": 1, "15 Minute (M15)": 15}
+
+momentum_metrics = st.session_state.bot.check_momentum_reversal(timeframe=m_tf_map[m_tf_choice] if MT5_AVAILABLE else 5)
+
 dxy_bias = st.sidebar.selectbox("DXY Structure Bias", ["BEARISH", "BULLISH"])
 flow_state = st.sidebar.selectbox("Market Flow State", ["CORRECTION", "IMPULSE", "CONTINUATION"])
-momentum_status = st.sidebar.selectbox("Momentum Status", ["RETURNING", "DECREASING", "STAGNANT"])
 
 st.sidebar.markdown("---")
 st.sidebar.header("🛡️ Lower Timeframe M5 Entry")
@@ -191,37 +221,3 @@ with col2:
     st.metric(label="🔄 System Flow State", value=flow_state)
 with col3:
     m5_valid = (m5_structure == "Bullish" and m5_sweep and m5_bos)
-    st.metric(label="🎯 M5 Trigger Confirmation", value="VALID" if m5_valid else "WAITING")
-
-st.markdown("### 📈 Automated Math Scanner Data (Phase 4)")
-f_col1, f_col2, f_col3, f_col4 = st.columns(4)
-f_col1.metric(f"Structural High Found ({lookback_input} Bars)", f"{fib_metrics['high']}")
-f_col2.metric(f"Structural Low Found ({lookback_input} Bars)", f"{fib_metrics['low']}")
-f_col3.metric("Golden 61.8% Entry Line", f"{fib_metrics['level_618']}")
-f_col4.metric("Current Pullback Depth", f"{retracement}%")
-
-st.markdown("### 📋 Automated 7-Phase Checklist Summary")
-
-# CLEAN UP CALCULATIONS BEFORE PASSING TO DICTIONARY (Prevents Cloud Table Bugs)
-if live_price >= 28900 and live_price <= 29050:
-    area_status = "INSIDE DEMAND"
-elif live_price >= 29600 and live_price <= 29750:
-    area_status = "INSIDE SUPPLY"
-else:
-    area_status = "BETWEEN ZONES"
-
-if retracement >= 61.8:
-    correction_quality = "GOOD"
-elif retracement < 38.2:
-    correction_quality = "SHALLOW"
-else:
-    correction_quality = "MODERATE"
-
-checklist_data = {
-    "Phase Metric Block": ["HTF Trend Bias", "Value Zone Placement", "Fib Position Index", "DXY Directional Wind", "Flow State Alignment", "Zone Boundaries (Area)", "Correction Pullback Quality", "Momentum Returning Pulse", "M5 Micro Trigger Structure"],
-    "Current Engine Value": ["NEUTRAL/BULLISH", "DISCOUNT", "MID/DEEP DISCOUNT", dxy_bias, flow_state, area_status, f"{retracement}% ({correction_quality})", f"BULLISH - {momentum_status}", f"Sweep: {m5_sweep} | BOS: {m5_bos}"],
-    "Verification Status": [
-        "✅ Verified", 
-        "✅ Verified", 
-        "✅ Verified",
-        "✅ Verified" if dxy_bias == "BEARISH" else "❌ Disaligned (Hold)",
