@@ -202,15 +202,26 @@ f_col4.metric("Current Pullback Depth", f"{retracement}%")
 
 st.markdown("### 📋 Automated 7-Phase Checklist Summary")
 
-area_status = "INSIDE DEMAND" if (28900 <= live_price <= 29050) else ("INSIDE SUPPLY" if (29600 <= live_price <= 29750) else "BETWEEN ZONES")
-correction_quality = "GOOD" if retracement >= 61.8 else "SHALLOW" if retracement < 38.2 else "MODERATE"
+# CLEAN UP CALCULATIONS BEFORE PASSING TO DICTIONARY (Prevents Cloud Table Bugs)
+if live_price >= 28900 and live_price <= 29050:
+    area_status = "INSIDE DEMAND"
+elif live_price >= 29600 and live_price <= 29750:
+    area_status = "INSIDE SUPPLY"
+else:
+    area_status = "BETWEEN ZONES"
+
+if retracement >= 61.8:
+    correction_quality = "GOOD"
+elif retracement < 38.2:
+    correction_quality = "SHALLOW"
+else:
+    correction_quality = "MODERATE"
 
 checklist_data = {
     "Phase Metric Block": ["HTF Trend Bias", "Value Zone Placement", "Fib Position Index", "DXY Directional Wind", "Flow State Alignment", "Zone Boundaries (Area)", "Correction Pullback Quality", "Momentum Returning Pulse", "M5 Micro Trigger Structure"],
     "Current Engine Value": ["NEUTRAL/BULLISH", "DISCOUNT", "MID/DEEP DISCOUNT", dxy_bias, flow_state, area_status, f"{retracement}% ({correction_quality})", f"BULLISH - {momentum_status}", f"Sweep: {m5_sweep} | BOS: {m5_bos}"],
     "Verification Status": [
-        "✅ Verified", "✅ Verified", "✅ Verified",
+        "✅ Verified", 
+        "✅ Verified", 
+        "✅ Verified",
         "✅ Verified" if dxy_bias == "BEARISH" else "❌ Disaligned (Hold)",
-        "✅ Verified" if flow_state == "CORRECTION" else "❌ Non-Correction Phase",
-        "✅ Verified" if area_status == "INSIDE DEMAND" else "❌ Floating Outside Zones",
-        "✅ Verified" if retracement >= 61.8 else "❌ Trap: Shallow Pullback",
