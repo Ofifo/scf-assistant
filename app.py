@@ -1,12 +1,14 @@
 import streamlit as st
 import pandas as pd
+import MetaTrader5 as mt5
+import time
 
 # --- SMART OS DETECTION AND IMPORT ---
 try:
     import MetaTrader5 as mt5
     MT5_AVAILABLE = True
 except ModuleNotFoundError:
-    MT5_AVAILABLE = False  # Smoothly falls back if running on Linux Cloud
+    MT5_AVAILABLE = False
 
 # =================================================================
 # 1. CORE BACKEND ENGINE (SCF ASSISTANT LOGIC)
@@ -15,38 +17,86 @@ class HighQualitySCFAssistantBot:
     def __init__(self, symbol="USA100", risk_pct=0.01):
         self.symbol = symbol
         self.risk_pct = risk_pct
+        self.mt5_initialized = False
         
     def initialize_mt5(self):
         """Attempts connection to MT5 terminal if platform supports it."""
         if not MT5_AVAILABLE:
             return False, "⚠️ Running in CLOUD DEMO MODE (MT5 requires a local Windows environment)."
         
-        import MetaTrader5 as local_mt5
-        if not local_mt5.initialize():
-            return False, f"MT5 initialization failed: {local_mt5.last_error()}"
+        if not self.mt5_initialized:
+            if not mt5.initialize():
+                return False, f"MT5 initialization failed: {mt5.last_error()}"
+            self.mt5_initialized = True
         return True, f"Connected to MT5 terminal successfully for {self.symbol}."
 
+    def fetch_live_price(self):
+        """Pulls raw, real-time tick data out of the live MT5 engine."""
+        success, msg = self.initialize_mt5()
+        if not success: return None
+        
+        tick = mt5.symbol_info_tick(self.symbol)
+        if tick is None: return None
+        return tick.ask 
+
+    def calculate_fib_retracement(self, timeframe=mt5.TIMEFRAME_H1, lookback_candles=50):
+        """
+        PHASE 4 AUTOMATION: Scans historical bars to find the structural
+        High and Low, then calculates the current pullback percentage.
+        """
+        success, msg = self.initialize_mt5()
+        if not success:
+            # Return dummy metrics for cloud mode sandbox tracking
+            return {"high": 29600.0, "low": 28900.0, "level_618": 29167.0, "current_retracement": 61.8}
+            
+        # Fetch historical candlestick bars
+        rates = mt5.copy_rates_from_pos(self.symbol, timeframe, 0, lookback_candles)
+        if rates is None or len(rates) == 0:
+            return {"high": 0.0, "low": 0.0, "level_618": 0.0, "current_retracement": 0.0}
+            
+        df_rates = pd.DataFrame(rates)
+        
+        # Determine macro swing points over lookback period
+        swing_high = float(df_rates['high'].max())
+        swing_low = float(df_rates['low'].min())
+        total_range = swing_high - swing_low
+        
+        if total_range == 0:
+            return {"high": swing_high, "low": swing_low, "level_618": swing_high, "current_retracement": 0.0}
+            
+        # Get live price to establish pullback matrix depth
+        live_price = self.fetch_live_price()
+        if not live_price: live_price = swing_high
+        
+        # Math Formula for Pullback percentage from the top down:
+        # Retracement % = ((Highest High - Current Price) / (Highest High - Lowest Low)) * 100
+        current_retracement = ((swing_high - live_price) / total_range) * 100
+        
+        # Calculate the golden structural level price string 
+        level_618 = swing_high - (total_range * 0.618)
+        
+        return {
+            "high": round(swing_high, 2),
+            "low": round(swing_low, 2),
+            "level_618": round(level_618, 2),
+            "current_retracement": round(current_retracement, 2)
+        }
+
     def get_account_balance(self):
-        if MT5_AVAILABLE:
-            try:
-                import MetaTrader5 as local_mt5
-                account_info = local_mt5.account_info()
-                if account_info: return account_info.balance
-            except:
-                pass
-        return 10000.0 # Default cloud simulation balance
+        if MT5_AVAILABLE and self.mt5_initialized:
+            account_info = mt5.account_info()
+            if account_info: return account_info.balance
+        return 10000.0 
 
     def calculate_lot_size(self, entry_price, stop_loss):
         balance = self.get_account_balance()
         risk_amount = balance * self.risk_pct
         price_risk = abs(entry_price - stop_loss)
-        
         if price_risk == 0: return 0.0
         
-        if MT5_AVAILABLE:
+        if MT5_AVAILABLE and self.mt5_initialized:
             try:
-                import MetaTrader5 as local_mt5
-                symbol_info = local_mt5.symbol_info(self.symbol)
+                symbol_info = mt5.symbol_info(self.symbol)
                 if symbol_info:
                     volume_step = symbol_info.volume_step
                     raw_lot_size = risk_amount / (price_risk * symbol_info.trade_contract_size)
@@ -54,20 +104,18 @@ class HighQualitySCFAssistantBot:
                     return max(symbol_info.volume_min, min(symbol_info.volume_max, round(lot_size, 2)))
             except:
                 pass
-        return 0.1 # Default cloud simulator step
+        return 0.1 
 
     def execute_market_order(self, order_type, price, sl, tp, live_execution=False):
         lots = self.calculate_lot_size(price, sl)
         if lots <= 0: return "Execution halted: Invalid calculated lot size."
         
-        # Guard clause preventing cloud execution mistakes
         if not MT5_AVAILABLE or not live_execution:
             return f"⚙️ SIMULATION PASSED: Bot would execute {order_type} for {lots} lots. (SL: {sl} | TP: {tp})"
             
-        import MetaTrader5 as local_mt5
-        action = local_mt5.ORDER_TYPE_BUY if order_type == "BUY" else local_mt5.ORDER_TYPE_SELL
+        action = mt5.ORDER_TYPE_BUY if order_type == "BUY" else mt5.ORDER_TYPE_SELL
         request = {
-            "action": local_mt5.TRADE_ACTION_DEAL,
+            "action": mt5.TRADE_ACTION_DEAL,
             "symbol": self.symbol,
             "volume": lots,
             "type": action,
@@ -77,12 +125,12 @@ class HighQualitySCFAssistantBot:
             "deviation": 20,
             "magic": 20260914,
             "comment": f"SCF HQ {order_type}",
-            "type_time": local_mt5.ORDER_TIME_GTC,
-            "type_filling": local_mt5.ORDER_FILLING_IOC,
+            "type_time": mt5.ORDER_TIME_GTC,
+            "type_filling": mt5.ORDER_FILLING_IOC,
         }
         
-        result = local_mt5.order_send(request)
-        if result.retcode != local_mt5.TRADE_RETCODE_DONE:
+        result = mt5.order_send(request)
+        if result.retcode != mt5.TRADE_RETCODE_DONE:
             return f"❌ MT5 Order Refused: {result.comment}"
         return f"🔥 LIVE SUCCESS: Opened {order_type} for {lots} lots on your terminal!"
 
@@ -100,16 +148,29 @@ if "bot" not in st.session_state:
 # --- SIDEBAR CONTROLS ---
 st.sidebar.header("🎛️ Live Parameter Feed")
 
-# Environment banner notification
 if MT5_AVAILABLE:
     st.sidebar.success("🖥️ Environment: WINDOWS LOCAL (Live Trade Capable)")
+    fetched_price = st.session_state.bot.fetch_live_price()
+    if fetched_price:
+        live_price = fetched_price
+        st.sidebar.metric(label="🔄 Live Feed Price Status", value="ACTIVE", delta="Streaming Tick Data")
+    else:
+        st.sidebar.warning("⚠️ Terminal Open but Symbol Not Found.")
+        live_price = st.sidebar.number_input("USA100 Live Price Target", value=29262.0, step=1.0)
 else:
     st.sidebar.info("☁️ Environment: CLOUD SIMULATION (Safe Sandbox Only)")
+    live_price = st.sidebar.number_input("USA100 Live Price Target", value=29262.0, step=1.0)
 
-live_price = st.sidebar.number_input("USA100 Live Price Target", value=29262.0, step=1.0)
+# --- PHASE 4 AUTOMATED ENGINE DISPATCH ---
+# Choose timeframe to calculate the high/low market structure
+tf_choice = st.sidebar.selectbox("Fib Lookback Timeframe", ["1 Hour (H1)", "15 Minute (M15)", "4 Hour (H4)"])
+tf_map = {"1 Hour (H1)": mt5.TIMEFRAME_H1 if MT5_AVAILABLE else 1, "15 Minute (M15)": mt5.TIMEFRAME_M15 if MT5_AVAILABLE else 2, "4 Hour (H4)": mt5.TIMEFRAME_H4 if MT5_AVAILABLE else 3}
+
+fib_metrics = st.session_state.bot.calculate_fib_retracement(timeframe=tf_map[tf_choice])
+retracement = fib_metrics["current_retracement"]
+
 dxy_bias = st.sidebar.selectbox("DXY Structure Bias", ["BEARISH", "BULLISH"])
 flow_state = st.sidebar.selectbox("Market Flow State", ["CORRECTION", "IMPULSE", "CONTINUATION"])
-retracement = st.sidebar.slider("Correction Retracement %", min_value=0.0, max_value=100.0, value=61.8)
 momentum_status = st.sidebar.selectbox("Momentum Status", ["RETURNING", "DECREASING", "STAGNANT"])
 
 st.sidebar.markdown("---")
@@ -119,28 +180,36 @@ m5_sweep = st.sidebar.checkbox("Liquidity Sweep Confirmed", value=True)
 m5_bos = st.sidebar.checkbox("Break of Structure (BOS)", value=True)
 
 st.sidebar.markdown("---")
-# Block or show live toggles based on environment
 if MT5_AVAILABLE:
     live_execution_toggle = st.sidebar.toggle("⚠️ Enable Live Broker Orders", value=False)
+    auto_refresh = st.sidebar.checkbox("🔄 Auto-Refresh Tick Stream (1s)", value=False)
 else:
-    st.sidebar.text_input("⚠️ Live Broker Orders", value="DISABLED IN CLOUD", disabled=True)
     live_execution_toggle = False
+    auto_refresh = False
 
 # --- APP LAYOUT MAIN GRID ---
 col1, col2, col3 = st.columns(3)
 
 with col1:
-    st.metric(label="📊 USA100 Current Ask", value=f"{live_price}")
+    st.metric(label="📊 USA100 Real-Time Ask", value=f"{round(live_price, 2)}")
 with col2:
     st.metric(label="🔄 System Flow State", value=flow_state)
 with col3:
     m5_valid = (m5_structure == "Bullish" and m5_sweep and m5_bos)
     st.metric(label="🎯 M5 Trigger Confirmation", value="VALID" if m5_valid else "WAITING")
 
+# --- EXPANDED VISUAL METRICS FOR AUTOMATED PHASE 4 ---
+st.markdown("### 📈 Automated Math Scanner Data (Phase 4)")
+f_col1, f_col2, f_col3, f_col4 = st.columns(4)
+f_col1.metric("Structural High Found", f"{fib_metrics['high']}")
+f_col2.metric("Structural Low Found", f"{fib_metrics['low']}")
+f_col3.metric("Golden 61.8% Entry Line", f"{fib_metrics['level_618']}")
+f_col4.metric("Current Pullback Depth", f"{retracement}%")
+
 st.markdown("### 📋 Automated 7-Phase Checklist Summary")
 
 area_status = "INSIDE DEMAND" if (28900 <= live_price <= 29050) else ("INSIDE SUPPLY" if (29600 <= live_price <= 29750) else "BETWEEN ZONES")
-correction_quality = "GOOD" if retracement >= 61.8 else "SHALLOW"
+correction_quality = "GOOD" if retracement >= 61.8 else "SHALLOWh" if retracement < 38.2 else "MODERATE"
 
 checklist_data = {
     "Phase Metric Block": ["HTF Trend Bias", "Value Zone Placement", "Fib Position Index", "DXY Directional Wind", "Flow State Alignment", "Zone Boundaries (Area)", "Correction Pullback Quality", "Momentum Returning Pulse", "M5 Micro Trigger Structure"],
@@ -148,46 +217,3 @@ checklist_data = {
     "Verification Status": [
         "✅ Verified", "✅ Verified", "✅ Verified",
         "✅ Verified" if dxy_bias == "BEARISH" else "❌ Disaligned (Hold)",
-        "✅ Verified" if flow_state == "CORRECTION" else "❌ Non-Correction Phase",
-        "✅ Verified" if area_status == "INSIDE DEMAND" else "❌ Floating Outside Zones",
-        "✅ Verified" if correction_quality == "GOOD" else "❌ Trap: Shallow Pullback",
-        "✅ Verified" if momentum_status == "RETURNING" else "❌ Lacks Momentum Confirmation",
-        "✅ Verified" if m5_valid else "❌ Structure Invalidation"
-    ]
-}
-
-df = pd.DataFrame(checklist_data)
-st.table(df)
-
-# --- RUN ENGINE RESOLUTION LOGIC ---
-st.markdown("### 🏁 SCF Diagnostic Verdict Engine")
-
-if st.button("🚀 Execute Engine Matrix Checklist Scan"):
-    chk_dxy = dxy_bias == "BEARISH"
-    chk_flow = flow_state == "CORRECTION"
-    chk_area = area_status == "INSIDE DEMAND"
-    chk_corr = correction_quality == "GOOD"
-    chk_mom = momentum_status == "RETURNING"
-    chk_m5 = m5_valid
-    
-    all_phases_green = all([chk_dxy, chk_flow, chk_area, chk_corr, chk_mom, chk_m5])
-    
-    st.markdown("---")
-    if all_phases_green:
-        st.subheader("Verdict Decision: 🟢 HIGH QUALITY LONG")
-        st.info("Reasoning: Every single high-probability confluence ruleset parameters satisfied.")
-        
-        mt5_status, mt5_msg = st.session_state.bot.initialize_mt5()
-        st.write(f"_*System Log: {mt5_msg}_")
-        
-        action_log = st.session_state.bot.execute_market_order(
-            order_type="BUY", 
-            price=live_price, 
-            sl=(live_price - 100), 
-            tp=(live_price + 250),
-            live_execution=live_execution_toggle
-        )
-        st.success(action_log)
-    else:
-        st.subheader("Verdict Decision: 🟡 WAIT")
-        st.warning("Reasoning: Safe Matrix Ruleset Alert. Conditions are not fully aligned yet. Orders blocked.")
