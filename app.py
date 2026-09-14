@@ -69,22 +69,19 @@ class HighQualitySCFAssistantBot:
         """
         success, msg = self.initialize_mt5()
         if not success:
-            # Cloud sandbox default simulation tracking values
             return {"momentum": "BULLISH", "status": "RETURNING", "confirmed": True}
             
-        # Copy the last two completed lower-timeframe bars (Index 1 and Index 2)
         rates = mt5.copy_rates_from_pos(self.symbol, timeframe, 1, 2)
         if rates is None or len(rates) < 2:
             return {"momentum": "BEARISH", "status": "STAGNANT", "confirmed": False}
             
-        prev_candle = rates[0] # The older candle
-        last_candle = rates[1] # The most recently completed candle
+        # Standard structural array unpacking safely matching local execution layouts
+        prev_candle = rates[0] 
+        last_candle = rates[1] 
         
-        # Calculate real body expansions (Close - Open)
         prev_body = prev_candle['close'] - prev_candle['open']
         last_body = last_candle['close'] - last_candle['open']
         
-        # Check for a Bullish Engulfing structural shifts pattern match
         is_prev_bearish = prev_body < 0
         is_last_bullish = last_body > 0
         engulfs_range = abs(last_body) >= abs(prev_body)
@@ -187,7 +184,7 @@ lookback_input = st.sidebar.slider("Historical Candle Lookback Depth", min_value
 fib_metrics = st.session_state.bot.calculate_fib_retracement(timeframe=tf_map[tf_choice] if MT5_AVAILABLE else 1, lookback_candles=lookback_input)
 retracement = fib_metrics["current_retracement"]
 
-# --- NEW AUTOMATED PHASE 5 TIMEFRAME SELECTION ENGINE ---
+# --- MOMENTUM VALIDATION WINDOW ---
 st.sidebar.markdown("---")
 st.sidebar.header("🔥 Momentum Validation Window")
 m_tf_choice = st.sidebar.selectbox("Momentum Evaluation TF", ["5 Minute (M5)", "1 Minute (M1)", "15 Minute (M15)"])
@@ -221,3 +218,8 @@ with col2:
     st.metric(label="🔄 System Flow State", value=flow_state)
 with col3:
     m5_valid = (m5_structure == "Bullish" and m5_sweep and m5_bos)
+    st.metric(label="🎯 M5 Trigger Confirmation", value="VALID" if m5_valid else "WAITING")
+
+st.markdown("### 📈 Automated Math Scanner Data (Phase 4 & 5)")
+f_col1, f_col2, f_col3, f_col4 = st.columns(4)
+f_col1.metric("Structural High Found", f"{fib_metrics['high']}")
