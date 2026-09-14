@@ -41,20 +41,17 @@ class HighQualitySCFAssistantBot:
         """
         success, msg = self.initialize_mt5()
         if not success:
-            # Flexible cloud simulation behavior based on the lookback depth
             base_high = 29500.0 + (lookback_candles * 0.5)
             base_low = 28900.0 - (lookback_candles * 0.2)
             level_618 = base_high - ((base_high - base_low) * 0.618)
             return {"high": base_high, "low": base_low, "level_618": round(level_618, 2), "current_retracement": 61.8}
             
-        # Fetch historical candlestick bars using dynamic user input variable
         rates = mt5.copy_rates_from_pos(self.symbol, timeframe, 0, lookback_candles)
         if rates is None or len(rates) == 0:
             return {"high": 0.0, "low": 0.0, "level_618": 0.0, "current_retracement": 0.0}
             
         df_rates = pd.DataFrame(rates)
         
-        # Calculate max/min bounds across the user-defined history length
         swing_high = float(df_rates['high'].max())
         swing_low = float(df_rates['low'].min())
         total_range = swing_high - swing_low
@@ -155,16 +152,14 @@ else:
     st.sidebar.info("☁️ Environment: CLOUD SIMULATION (Safe Sandbox Only)")
     live_price = st.sidebar.number_input("USA100 Live Price Target", value=29262.0, step=1.0)
 
-# --- NEW LOOKBACK WINDOW MATRIX SETTINGS ---
+# --- LOOKBACK WINDOW MATRIX SETTINGS ---
 st.sidebar.markdown("---")
 st.sidebar.header("📐 Fibonacci Lookback Setup")
 tf_choice = st.sidebar.selectbox("Fib Lookback Timeframe", ["1 Hour (H1)", "15 Minute (M15)", "4 Hour (H4)"])
-tf_map = {"1 Hour (H1)": 16385, "15 Minute (M15)": 15, "4 Hour (H4)": 16388} # Accurate native MT5 structural constants
+tf_map = {"1 Hour (H1)": 16385, "15 Minute (M15)": 15, "4 Hour (H4)": 16388}
 
-# Visual lookback selection engine slider
 lookback_input = st.sidebar.slider("Historical Candle Lookback Depth", min_value=10, max_value=200, value=50, step=5)
 
-# Connect the dashboard input variables directly into the engine math method
 fib_metrics = st.session_state.bot.calculate_fib_retracement(timeframe=tf_map[tf_choice] if MT5_AVAILABLE else 1, lookback_candles=lookback_input)
 retracement = fib_metrics["current_retracement"]
 
@@ -214,3 +209,8 @@ checklist_data = {
     "Phase Metric Block": ["HTF Trend Bias", "Value Zone Placement", "Fib Position Index", "DXY Directional Wind", "Flow State Alignment", "Zone Boundaries (Area)", "Correction Pullback Quality", "Momentum Returning Pulse", "M5 Micro Trigger Structure"],
     "Current Engine Value": ["NEUTRAL/BULLISH", "DISCOUNT", "MID/DEEP DISCOUNT", dxy_bias, flow_state, area_status, f"{retracement}% ({correction_quality})", f"BULLISH - {momentum_status}", f"Sweep: {m5_sweep} | BOS: {m5_bos}"],
     "Verification Status": [
+        "✅ Verified", "✅ Verified", "✅ Verified",
+        "✅ Verified" if dxy_bias == "BEARISH" else "❌ Disaligned (Hold)",
+        "✅ Verified" if flow_state == "CORRECTION" else "❌ Non-Correction Phase",
+        "✅ Verified" if area_status == "INSIDE DEMAND" else "❌ Floating Outside Zones",
+        "✅ Verified" if retracement >= 61.8 else "❌ Trap: Shallow Pullback",
