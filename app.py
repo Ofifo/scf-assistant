@@ -38,14 +38,11 @@ class HighQualitySCFAssistantBot:
         """Calculates macro high, low, 61.8% line and live pullback metrics."""
         success, msg = self.initialize_mt5()
         if not success:
-            # Flawless isolated mock calculation dictionary for cloud demo
-            base_high = float(29500.0 + (lookback_candles * 0.5))
-            base_low = float(28900.0 - (lookback_candles * 0.2))
-            level_618 = float(base_high - ((base_high - base_low) * 0.618))
+            # Safe basic values for cloud tracking sandbox
             return {
-                "high": round(base_high, 2), 
-                "low": round(base_low, 2), 
-                "level_618": round(level_618, 2), 
+                "high": 29500.0, 
+                "low": 28900.0, 
+                "level_618": 29128.0, 
                 "current_retracement": 61.8
             }
             
@@ -84,6 +81,7 @@ class HighQualitySCFAssistantBot:
         if rates is None or len(rates) < 2:
             return {"momentum": "BEARISH", "status": "STAGNANT", "confirmed": False}
             
+        # Using explicit list indexing to safely parse local MT5 numpy arrays
         prev_candle = rates[0]
         last_candle = rates[1]
         
@@ -181,7 +179,7 @@ else:
     st.sidebar.info("☁️ Environment: CLOUD SIMULATION (Safe Sandbox Only)")
     live_price = st.sidebar.number_input("USA100 Live Price Target", value=29262.0, step=1.0)
 
-# --- LOOKBACK WINDOW MATRIX SETTINGS ---
+# --- LOOKBACK WINDOW SETTINGS ---
 st.sidebar.markdown("---")
 st.sidebar.header("📐 Fibonacci Lookback Setup")
 tf_choice = st.sidebar.selectbox("Fib Lookback Timeframe", ["1 Hour (H1)", "15 Minute (M15)", "4 Hour (H4)"])
@@ -192,7 +190,7 @@ lookback_input = st.sidebar.slider("Historical Candle Lookback Depth", min_value
 fib_metrics = st.session_state.bot.calculate_fib_retracement(timeframe=tf_map[tf_choice] if MT5_AVAILABLE else 1, lookback_candles=lookback_input)
 retracement = fib_metrics["current_retracement"]
 
-# --- MOMENTUM VALIDATION WINDOW ---
+# --- MOMENTUM SETTINGS ---
 st.sidebar.markdown("---")
 st.sidebar.header("🔥 Momentum Validation Window")
 m_tf_choice = st.sidebar.selectbox("Momentum Evaluation TF", ["5 Minute (M5)", "1 Minute (M1)", "15 Minute (M15)"])
@@ -221,10 +219,14 @@ else:
 col1, col2, col3 = st.columns(3)
 
 with col1:
-    st.metric(label="📊 USA100 Real-Time Ask", value=f"{round(live_price, 2)}")
+    st.metric(label="📊 USA100 Real-Time Ask", value=str(round(live_price, 2)))
 with col2:
-    st.metric(label="🔄 System Flow State", value=flow_state)
+    st.metric(label="🔄 System Flow State", value=str(flow_state))
 with col3:
     m5_valid = (m5_structure == "Bullish" and m5_sweep and m5_bos)
     st.metric(label="🎯 M5 Trigger Confirmation", value="VALID" if m5_valid else "WAITING")
 
+# --- BULLETPROOF FLAT DATA SCANNER ROW ---
+st.markdown("### 📈 Automated Math Scanner Data (Phase 4 & 5)")
+mc1, mc2, mc3, mc4 = st.columns(4)
+mc1.metric("Structural High Found", str(fib_metrics.get("high", 0.0)))
